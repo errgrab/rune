@@ -1,4 +1,3 @@
-|--------|-----|-|
 | opcode | asm | Pseudo C |
 |--------|-----|-|
 | ` ***` | nop | |
@@ -9,7 +8,7 @@
 | `/abc` | div | `a = b / c` |
 | `%abc` | mod | `a = b % c` |
 | `&abc` | and | `a = b & c` |
-| `|abc` | or  | `a = b | c` |
+| `\|abc` | or  | `a = b \| c` |
 | `^abc` | xor | `a = b ^ c` |
 | `~ab*` | not | `a = !b` |
 | `!apt` | str | `*a = p` |
@@ -20,7 +19,6 @@
 | `?abc` | cmp | `switch (*a) '=': a = b == c; ...` |
 | `(a**` | cal | `push(pc); pc = a` |
 | `)a**` | ret | `pc = pop();` |
-|--------|-----|-|
 
 notes:
 - `p` is pointer
