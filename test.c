@@ -47,10 +47,10 @@ TEST(memory) {
 TEST(ports) {
 	run(":ax5 :bgc #>ab");
     ASSERT(vm.port[5] == 99);
-	const char *test = ":axa #<ba";
+	const char test[] = ":axa #<ba";
     glyph_init(&vm, mem, sizeof(mem));
     vm.port[10] = 77;
-    memcpy(mem, test, strlen(test) + 1);
+    memcpy(mem, test, sizeof(test));
     glyph_run(&vm);
     ASSERT(vm.reg['b'] == 77);
 }
@@ -60,12 +60,79 @@ TEST(jump) {
     ASSERT(vm.reg['a'] == 0);  /* skipped */
 }
 
-TEST(conditional) {
-    run(":ax5 :bx5 ?=ab:cx1 :dx2");
-    ASSERT(vm.reg['c'] == 1 && vm.reg['d'] == 2);
+TEST(conditional_eq) {
+    /* ?=bct: jump to R(t) if R(b) == R(c) */
+    /* When equal: jump over ":rx9" to continue at ":ax1" */
+    run(":jg\x1a :ax5 :bx5 ?=abj :rx9 :ax1");
+    ASSERT(vm.reg['a'] == 1);   /* jumped, then set to 1 */
+    ASSERT(vm.reg['r'] == 0);   /* skipped */
 
-    run(":ax5 :bx3 ?=ab:cx1");
-    ASSERT(vm.reg['c'] == 0);  /* skipped due to inequality */
+    /* When not equal: no jump, execute ":rx9" */
+    run(":jg\x1a :ax5 :bx3 ?=abj :rx9 :ax1");
+    ASSERT(vm.reg['a'] == 1);   /* still runs */
+    ASSERT(vm.reg['r'] == 9);   /* not skipped */
+}
+
+TEST(conditional_neq) {
+    /* ?!bct: jump if R(b) != R(c) */
+    run(":jg\x19 :ax5 :bx3 ?!abj :rx9 :ax1");
+    ASSERT(vm.reg['r'] == 0);   /* jumped over */
+    ASSERT(vm.reg['a'] == 1);
+
+    run(":jg\x19 :ax5 :bx5 ?!abj :rx9");
+    ASSERT(vm.reg['r'] == 9);   /* no jump, executed */
+}
+
+TEST(conditional_gt) {
+    /* ?>bct: jump if R(b) > R(c) */
+    run(":jg\x18 :ax5 :bx3 ?>abj :rx9 :ax1");
+    ASSERT(vm.reg['r'] == 0);   /* jumped over */
+
+    run(":jg\x18 :ax3 :bx5 ?>abj :rx9");
+    ASSERT(vm.reg['r'] == 9);   /* 3 not > 5, no jump */
+
+    run(":jg\x18 :ax5 :bx5 ?>abj :rx9");
+    ASSERT(vm.reg['r'] == 9);   /* 5 not > 5, no jump */
+}
+
+TEST(conditional_lt) {
+    /* ?<bct: jump if R(b) < R(c) */
+    run(":jg\x18 :ax3 :bx5 ?<abj :rx9 :ax1");
+    ASSERT(vm.reg['r'] == 0);   /* jumped over */
+
+    run(":jg\x18 :ax5 :bx3 ?<abj :rx9");
+    ASSERT(vm.reg['r'] == 9);   /* 5 not < 3, no jump */
+}
+
+TEST(call_return) {
+    /* ;a calls R(a), comma returns */
+    /* Program: set j to subroutine addr, call it, subroutine sets r=7 and returns, then set a=1 */
+    const char prog[] = ":jg\x13 :axf ;j :ax1 \0 :rxf ,";
+    glyph_init(&vm, mem, sizeof(mem));
+    memcpy(mem, prog, sizeof(prog));
+    glyph_run(&vm);
+    ASSERT(vm.reg['r'] == 15);  /* subroutine executed */
+    ASSERT(vm.reg['a'] == 1);   /* returned and continued */
+}
+
+TEST(nested_calls) {
+    /* Test nested calls: main -> sub1 -> sub2 -> return -> return */
+    /* Layout: 
+       0x00: :1g\x13 :2g\x21 ;1 :ax1 \0
+       0x13: :bx2 ;2 :dx4 ,
+       0x21: :cx3 ,
+    */
+    const char prog[] = 
+        ":1g\x13 :2g\x21 ;1 :ax1 \0" /* main: call sub1, then a=1 */
+        ":bx2 ;2 :dx4 ,"             /* sub1: b=2, call sub2, d=4, return */
+        ":cx3 ,";                    /* sub2: c=3, return */
+    glyph_init(&vm, mem, sizeof(mem));
+    memcpy(mem, prog, sizeof(prog));
+    glyph_run(&vm);
+    ASSERT(vm.reg['a'] == 1);   /* after return from sub1 */
+    ASSERT(vm.reg['b'] == 2);   /* set in sub1 before sub2 */
+    ASSERT(vm.reg['c'] == 3);   /* set in sub2 */
+    ASSERT(vm.reg['d'] == 4);   /* set in sub1 after sub2 */
 }
 
 TEST(copy) {
@@ -81,7 +148,12 @@ int main(void) {
     RUN(memory);
     RUN(ports);
     RUN(jump);
-    RUN(conditional);
+    RUN(conditional_eq);
+    RUN(conditional_neq);
+    RUN(conditional_gt);
+    RUN(conditional_lt);
+    RUN(call_return);
+    RUN(nested_calls);
     RUN(copy);
     printf("==============\nAll tests passed.\n");
     return 0;

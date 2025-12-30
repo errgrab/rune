@@ -13,13 +13,18 @@
 typedef uint8_t  u8;
 typedef uint32_t u32;
 
+/* Resonance */
+typedef void (*GlyphRes)(u8 port);
+
 typedef struct {
     u8 *mem;
-	u8  sp;
+    u8  sp;
     u32 size;
     u32 reg[128];
-	u32 stk[256];
+    u32 stk[256];
     u32 port[256];
+    GlyphRes emit;
+    GlyphRes sense;
     bool halt;
 } Glyph;
 
@@ -32,7 +37,6 @@ void glyph_run(Glyph *vm);
 #define R(x)  vm->reg[(x) & 127]
 #define M(x)  vm->mem[(x) & (vm->size - 1)]
 #define PC    R('.')
-#define SP    R(',')
 
 static inline u8 N(Glyph *vm) {
     return (PC < vm->size) ? vm->mem[PC++] : (vm->halt = 1, 0);
@@ -44,7 +48,9 @@ void glyph_run(Glyph *vm) {
     while (!vm->halt) {
         op = N(vm);
         if (vm->halt) break;
-
+        #ifdef DEBUG
+        printf("OP: %c(%d) PC: %u\n", op, op, PC - 1);
+        #endif
         switch (op) {
         /* Arithmetic: +abc -abc *abc /abc %abc */
         case '+': a=N(vm); b=N(vm); c=N(vm); R(a) = R(b) + R(c); break;
@@ -73,32 +79,30 @@ void glyph_run(Glyph *vm) {
         case '@': a=N(vm); b=N(vm); R(a) = M(R(b)); break;
         case '!': a=N(vm); b=N(vm); M(R(a)) = R(b); break;
 
-        /* Ports: #<ab #>ab */
+        /* Ports: #<ab #>ab (resonance) */
         case '#':
             a=N(vm); b=N(vm); c=N(vm);
-            if      (a == '<') R(b) = vm->port[R(c) & 255];
-            else if (a == '>') vm->port[R(b) & 255] = R(c);
+            if (a == '<') {
+                u8 p = R(c) & 255;
+                if (vm->sense) vm->sense(p);
+                R(b) = vm->port[p];
+            } else if (a == '>') {
+                u8 p = R(b) & 255;
+                vm->port[p] = R(c);
+                if (vm->emit) vm->emit(p);
+            }
             break;
 
-        /* Control: .a ?=ab ;a , */
+        /* Control: .a ?=bct ;a , */
         case '.': a=N(vm); PC = R(a); break;
         case '?':
             a=N(vm); b=N(vm); c=N(vm);
-            if ((a=='=' && R(b)!=R(c)) || (a=='!' && R(b)==R(c)) ||
-                (a=='>' && R(b)<=R(c)) || (a=='<' && R(b)>=R(c))) PC++;
+            if ((a=='=' && R(b)==R(c)) || (a=='!' && R(b)!=R(c)) ||
+                (a=='>' && R(b)>R(c))  || (a=='<' && R(b)<R(c))) PC = R(N(vm));
+            else N(vm);
             break;
-        case ';':
-            a = N(vm);
-            SP -= 4;
-            M(SP+0) = PC; M(SP+1) = PC >> 8;
-            M(SP+2) = PC >> 16; M(SP+3) = PC >> 24;
-            PC = R(a);
-            break;
-        case ',':
-            PC = M(SP) | (M(SP+1)<<8) |
-                 (M(SP+2)<<16) | (M(SP+3)<<24);
-            SP += 4;
-            break;
+        case ';': a = N(vm); vm->stk[vm->sp++] = PC; PC = R(a); break;
+        case ',': PC = vm->stk[--vm->sp]; break;
         case 0: vm->halt = 1; break;
 		case ' ':
 		case '\f':
@@ -115,11 +119,12 @@ void glyph_init(Glyph *vm, u8 *mem, u32 size) {
     memset(vm, 0, sizeof(Glyph));
     vm->mem = mem;
     vm->size = size;
-	vm->reg[','] = size;
 }
 
 #undef R
 #undef M
 #undef PC
+
 #endif /* GLYPH_IMPL */
+
 #endif /* GLYPH_H */

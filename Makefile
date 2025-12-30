@@ -1,15 +1,15 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c11 -O2
 
-all: example test
+all: glyph test
 
-example: main.c glyph.h
-	$(CC) $(CFLAGS) main.c -o example
+glyph: main.c glyph.h
+	$(CC) $(CFLAGS) main.c -o glyph
 
 test: test.c glyph.h
 	$(CC) $(CFLAGS) test.c -o test
 
 clean:
-	rm -f example test
+	rm -f glyph test
 
 .PHONY: all clean
