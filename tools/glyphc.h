@@ -28,7 +28,6 @@
 #include <string.h>
 #include <stdio.h>
 
-#define GLYPH_BASE    0x0100
 #define GLYPH_MAX_LABELS 128
 #define GLYPH_MAX_REFS   256
 
@@ -70,7 +69,7 @@ static inline void G_EMIT(GlyphAsm *g, uint8_t b) {
 
 /* Current address (with base offset) */
 static inline uint32_t G_HERE(GlyphAsm *g) {
-    return GLYPH_BASE + g->pos;
+    return g->pos;
 }
 
 /* Define a label at current position */

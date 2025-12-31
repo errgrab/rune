@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c11 -O2
 
-all: glyph test glyph-addr glyph-dis gen-glyph-addr gen-forth
+all: glyph glyph-addr glyph-dis
 
 glyph: main.c glyph.h
 	$(CC) $(CFLAGS) main.c -o glyph

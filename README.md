@@ -32,8 +32,8 @@ All ports are 32-bit. Uppercase = device vector, lowercase = device ports.
 **Console Device:**
 | Port | Description |
 |------|-------------|
-| `'C'` | Console vector (input callback address) |
-| `'c'` | Read: input character (set before callback) |
+| `'C'` | Console resonance addr |
+| `'c'` | Read: input character |
 | `'o'` | Write: stdout |
 | `'e'` | Write: stderr |
 

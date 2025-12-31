@@ -68,17 +68,6 @@ static void emu_sense(u8 port) {
     }
 }
 
-/* Send input character through console vector */
-static void console_input(u8 ch) {
-    u32 vector = vm.port[CON_VECTOR];
-    if (vector) {
-        vm.port[CON_READ] = ch;
-        vm.reg['.'] = vector;
-        vm.halt = false;
-        glyph_run(&vm);
-    }
-}
-
 /* Load program from file */
 static int load_file(const char *path) {
     FILE *f = fopen(path, "rb");
@@ -86,7 +75,7 @@ static int load_file(const char *path) {
         fprintf(stderr, "Error: cannot open '%s'\n", path);
         return -1;
     }
-    size_t n = fread(mem + 0x0100, 1, MEM_SIZE - 0x0100, f);
+    size_t n = fread(mem, 1, MEM_SIZE, f);
     fclose(f);
     if (n == 0) {
         fprintf(stderr, "Error: empty file '%s'\n", path);
@@ -98,9 +87,9 @@ static int load_file(const char *path) {
 /* Load program from string */
 static void load_string(const char *code) {
     size_t len = strlen(code);
-    if (len > MEM_SIZE - 0x0100)
-        len = MEM_SIZE - 0x0100;
-    memcpy(mem + 0x0100, code, len);
+    if (len > MEM_SIZE)
+        len = MEM_SIZE;
+    memcpy(mem, code, len);
 }
 
 static void usage(const char *prog) {
@@ -117,18 +106,16 @@ static void usage(const char *prog) {
 }
 
 int main(int argc, char **argv) {
-    int arg_start = 2;
-    
     if (argc < 2) {
         usage(argv[0]);
         return 1;
     }
-    
+
     /* Initialize VM */
     glyph_init(&vm, mem, MEM_SIZE);
     vm.emit = emu_emit;
     vm.sense = emu_sense;
-    
+
     /* Parse arguments */
     if (strcmp(argv[1], "-e") == 0) {
         if (argc < 3) {
@@ -136,7 +123,6 @@ int main(int argc, char **argv) {
             return 1;
         }
         load_string(argv[2]);
-        arg_start = 3;
     } else if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
         usage(argv[0]);
         return 0;
@@ -144,19 +130,8 @@ int main(int argc, char **argv) {
         if (load_file(argv[1]) < 0)
             return 1;
     }
-    
-    /* Start execution at 0x0100 */
-    vm.reg['.'] = 0x0100;
+
     glyph_run(&vm);
-    
-    /* Send command-line arguments as input (only if vector is set) */
-    if (vm.port[CON_VECTOR]) {
-        for (int i = arg_start; i < argc; i++) {
-            for (const char *p = argv[i]; *p; p++)
-                console_input(*p);
-            console_input(i < argc - 1 ? ' ' : '\n');
-        }
-    }
-    
+
     return 0;
 }
