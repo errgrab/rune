@@ -66,17 +66,20 @@ void glyph_run(Glyph *vm) {
 		case '<': a=N(vm); b=N(vm); c=N(vm); R(a) = R(b) << R(c); break;
 		case '>': a=N(vm); b=N(vm); c=N(vm); R(a) = R(b) >> R(c); break;
 
-		/* Load: :agX :axF :a.b */
+		/* Load: :.ab :'ab :0ab */
 		case ':':
-			a = N(vm); b = N(vm);
-			if      (b == 'g') R(a) = N(vm);
-			else if (b == 'x') { c = N(vm); R(a) = (c <= '9') ? c - '0' : (c | 32) - 'a' + 10; }
-			else if (b == '.') R(a) = R(N(vm));
+			a = N(vm); b = N(vm); c = N(vm);
+			if      (a == '.') R(b) = R(c);
+			else if (a == '\'') R(b) = c;
+			else if (a == '0') R(b) = (c <= '9') ? c - '0' : (c | 32) - 'a' + 10;
 			break;
 
-		/* Memory: @ab !ab */
-		case '@': a=N(vm); b=N(vm); R(a) = M(R(b)); break;
-		case '!': a=N(vm); b=N(vm); M(R(a)) = R(b); break;
+		/* Memory: @<ab @>ab */
+		case '@':
+			a = N(vm); b = N(vm); c = N(vm);
+			if      (a == '<') R(b) = M(R(c));
+			else if (a == '>') M(R(b)) = R(c);
+			break;
 
 		/* Ports: #<ab #>ab (resonance) */
 		case '#':
@@ -92,16 +95,63 @@ void glyph_run(Glyph *vm) {
 			}
 			break;
 
-		/* Control: .a ?=bct ;a , */
-		case '.': a=N(vm); PC = R(a); break;
-		case '?':
-			a=N(vm); b=N(vm); c=N(vm);
-			if ((a=='=' && R(b)==R(c)) || (a=='!' && R(b)!=R(c)) ||
-				(a=='>' && R(b)>R(c))  || (a=='<' && R(b)<R(c))) PC = R(N(vm));
-			else N(vm);
+		/* Compare: ?ab sets r['?'] = flags(a,b) [bit0=eq, bit1=gt, bit2=lt] */
+		case '?': {
+			a = N(vm); b = N(vm);
+			u32 va = R(a), vb = R(b);
+			R('?') = (va == vb ? 1 : 0) | (va > vb ? 2 : 0) | (va < vb ? 4 : 0);
 			break;
+		}
+
+		/* Label: 'a sets r[a] = PC (for backward jumps) */
+		case '\'': a = N(vm); R(a) = PC; break;
+
+		/* Block end markers: }a and ]a are 2-byte NOPs */
+		case '}': case ']': N(vm); break;
+
+		/* Jump backward: ..a .=a .!a .>a .<a (to r[a]) */
+		case '.': {
+			a = N(vm); b = N(vm);
+			int cond = (a == '.') ||
+			           (a == '=' && (R('?') & 1)) ||
+			           (a == '!' && !(R('?') & 1)) ||
+			           (a == '>' && (R('?') & 2)) ||
+			           (a == '<' && (R('?') & 4));
+			if (cond) PC = R(b);
+			break;
+		}
+
+		/* Skip forward: {a (sets r[a]=PC, skips to }a), [=a [!a [>a [<a (conditional to ]a) */
+		case '{': {
+			b = N(vm);
+			R(b) = PC;  /* record function entry point */
+			u32 scan = PC;
+			while (scan < vm->size - 1) {
+				if (M(scan) == '}' && M(scan + 1) == b) { PC = scan + 2; break; }
+				scan++;
+			}
+			break;
+		}
+		case '[': {
+			a = N(vm); b = N(vm);
+			int cond = (a == '=' && (R('?') & 1)) ||
+			           (a == '!' && !(R('?') & 1)) ||
+			           (a == '>' && (R('?') & 2)) ||
+			           (a == '<' && (R('?') & 4));
+			if (cond) {
+				u32 scan = PC;
+				while (scan < vm->size - 1) {
+					if (M(scan) == ']' && M(scan + 1) == b) { PC = scan + 2; break; }
+					scan++;
+				}
+			}
+			break;
+		}
+
+		/* Call/Return: ;a , */
 		case ';': a = N(vm); vm->stk[vm->sp++] = PC; PC = R(a); break;
 		case ',': PC = vm->stk[--vm->sp]; break;
+
 		case 0: vm->halt = 1; break;
 		case ' ':
 		case '\f':
